@@ -7,6 +7,7 @@ import org.redisson.api.RBucketReactive;
 import org.redisson.api.RKeysReactive;
 import org.redisson.api.RMapReactive;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.Iterator;
@@ -33,6 +34,25 @@ public class RedissonKeysReactiveTest extends BaseReactiveTest {
         Awaitility.await().atMost(Duration.ofSeconds(1)).untilAsserted(() -> {
             assertThat(i.get()).isEqualTo(100);
         });
+    }
+
+    @Test
+    public void testKeysByPatternIteratorWithSlowConsumer() {
+        int noOfKeys = 1200;
+        for (int i = 0; i < noOfKeys; i++) {
+            redisson.getBucket("key" + i).set(1).block();
+        }
+
+        Flux<String> p = redisson.getKeys().getKeysByPattern(null)
+                .flatMap(string -> Mono.just(string)
+                        .delayElement(Duration.ofMillis(10000)));
+        AtomicInteger i = new AtomicInteger();
+        p.doOnNext(t -> {
+            i.incrementAndGet();
+        }).doOnSubscribe(s -> {
+            s.request(100);
+        }).blockLast();
+        assertThat(i.get()).isEqualTo(noOfKeys);
     }
 
     @Test
